@@ -1,0 +1,20 @@
+# Local virtualenv — never commit it.
+.venv/
+venv/
+
+# Python bytecode / build artifacts.
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+
+# pytest / coverage caches.
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Generated test/render artifacts (WAVs + sidecar metric JSONs).
+*.wav
+*.json

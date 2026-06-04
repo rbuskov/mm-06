@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mm06-analysis"
+version = "0.1.0"
+description = "MM-06 render-WAV feature-extraction layer (regimes B & C). WAV -> metrics JSON."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+# Core deps. Pinned to the versions verified on this machine (macOS / Python
+# 3.14). The extractors fall back to scipy/numpy where librosa is unavailable,
+# but librosa installed cleanly here so it stays a hard dep.
+dependencies = [
+    "numpy==2.4.6",
+    "scipy==1.17.1",
+    "soundfile==0.13.1",
+    "librosa==0.11.0",
+]
+
+[project.optional-dependencies]
+# Overlay plots (spectrogram / decay-envelope / pitch-track) for the
+# calibration agent's reports — not needed to compute metrics or run tests.
+plots = ["matplotlib==3.11.0"]
+# Test runner.
+test = ["pytest==9.0.3"]
+
+[project.scripts]
+analyze = "analysis.__main__:main"
+
+[tool.setuptools]
+packages = ["analysis"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
