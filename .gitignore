@@ -69,3 +69,6 @@ tsconfig.tsbuildinfo
 # ergo / scheduler runtime locks (the plan itself IS committed)
 .ergo/lock
 .claude/scheduled_tasks.lock
+
+# agent worktree scratch
+.claude/worktrees/

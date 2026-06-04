@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = ["crates/dsp_core", "crates/dsp_wasm", "crates/render"]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "MIT"
+
+# Determinism is the foundation of the test strategy: the wasm32 (ship) and
+# native (test/render) builds of dsp_core must produce byte-identical output for
+# identical input (architecture.md §parity, calibration-and-testing-strategy.md
+# §5). That requires identical, predictable floating-point behaviour in both —
+# so: no fast-math, no FP reordering, fixed codegen.
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

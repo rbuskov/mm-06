@@ -1,0 +1,16 @@
+[package]
+name = "dsp_wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "MM-06 thin wasm-bindgen shell around dsp_core (ship target)"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+dsp_core = { path = "../dsp_core" }
+wasm-bindgen = "0.2"
+
+[features]
+default = []

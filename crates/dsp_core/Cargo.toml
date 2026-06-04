@@ -1,0 +1,13 @@
+[package]
+name = "dsp_core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "MM-06 pure, deterministic TR-606 DSP core (dual-target: native + wasm32)"
+
+# Pure library, no I/O and no web/wasm-bindgen dependency: it compiles unchanged
+# to native (tests + offline render) and to wasm32 (the shipped worklet engine).
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]

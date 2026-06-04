@@ -1,0 +1,20 @@
+{
+  "name": "mm-06-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "wasm": "wasm-pack build ../crates/dsp_wasm --target web --release --out-dir ../../web/wasm",
+    "build:worklet": "esbuild src/audio/worklet.ts --bundle --format=iife --target=es2020 --outfile=public/worklet.js --define:import.meta.url='\"\"'",
+    "prebuild": "npm run wasm && npm run build:worklet",
+    "predev": "npm run wasm && npm run build:worklet",
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.6.0",
+    "vite": "^6.0.0"
+  }
+}

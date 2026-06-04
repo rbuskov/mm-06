@@ -1,0 +1,98 @@
+:root {
+  --bg: #14161a;
+  --panel: #1e2228;
+  --panel2: #262b33;
+  --ink: #e6e9ee;
+  --muted: #8b94a3;
+  --accent: #ff9d3c;
+  --fire: #4cd2ff;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  padding: 24px;
+}
+
+#app { max-width: 880px; margin: 0 auto; }
+
+h2 { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
+
+.globals {
+  background: var(--panel);
+  border: 1px solid #2c323b;
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  display: grid;
+  /* Two columns: the four sliders fall into 2 rows of 2, so each slider is
+     ~half the panel wide instead of ~a fifth — much longer to drag. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 28px;
+  align-items: center;
+}
+.globals h2 { grid-column: 1 / -1; }
+/* Seed (the 5th, odd control) takes its own full-width row under the sliders. */
+.globals .ctrl.seed-row { grid-column: 1 / -1; }
+.globals .ctrl.seed-row .seed { flex: 0 0 120px; }
+
+@media (max-width: 520px) {
+  .globals { grid-template-columns: 1fr; }
+}
+
+.ctrl { display: flex; align-items: center; gap: 8px; font-size: 13px; min-width: 0; }
+.ctrl .lbl { flex: 0 0 58px; color: var(--muted); white-space: nowrap; }
+/* min-width:0 lets the range shrink below its intrinsic width so the value
+   readout never overlaps the label in narrow panels/columns. */
+.ctrl input[type="range"] { flex: 1 1 0; min-width: 0; accent-color: var(--accent); }
+.ctrl .val { flex: 0 0 38px; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+.ctrl input.seed { width: 90px; background: var(--panel2); color: var(--ink); border: 1px solid #3a414c; border-radius: 6px; padding: 4px 6px; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.voice {
+  background: var(--panel);
+  border: 1px solid #2c323b;
+  border-radius: 10px;
+  padding: 12px;
+  transition: background 80ms, border-color 80ms;
+}
+.voice.fired { background: #21353d; border-color: var(--fire); }
+
+.voice .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.voice .name { font-weight: 600; font-size: 13px; }
+.voice kbd {
+  background: var(--panel2); border: 1px solid #3a414c; border-bottom-width: 2px;
+  border-radius: 5px; padding: 1px 7px; font-size: 12px; color: var(--muted);
+}
+
+.btnrow { display: flex; gap: 8px; margin-top: 10px; }
+
+button {
+  font: inherit; cursor: pointer; border-radius: 7px; border: 1px solid #3a414c;
+  background: var(--panel2); color: var(--ink); padding: 7px 10px;
+}
+button.accent.on { background: var(--accent); color: #1a1205; border-color: var(--accent); font-weight: 600; }
+button.trigger { flex: 1; }
+button.trigger:active { background: #34495a; }
+
+.hint { color: var(--muted); font-size: 12px; line-height: 1.5; margin-top: 18px; }
+
+.overlay {
+  position: fixed; inset: 0; z-index: 10;
+  background: rgba(10, 12, 15, 0.92);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; text-align: center; padding: 24px;
+}
+.overlay h1 { font-size: 42px; margin: 0; letter-spacing: 0.04em; }
+.overlay p { color: var(--muted); margin: 0; }
+button.start { margin-top: 14px; padding: 12px 22px; font-size: 16px; background: var(--accent); color: #1a1205; border: none; font-weight: 600; }
+.overlay .status { color: var(--fire); min-height: 18px; }
