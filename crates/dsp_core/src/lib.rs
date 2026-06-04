@@ -18,6 +18,10 @@
 #![forbid(unsafe_code)]
 
 mod mathx;
+// Unused by the engine until voice-assembly wires the resonators to it; the
+// allow keeps the build warning-clean, matching `mod rng`.
+#[allow(dead_code)]
+mod excitation;
 pub mod protocol;
 // Kept for the real engine (seeded noise + per-hit variance, spec §10); unused
 // by the placeholder bleep.
