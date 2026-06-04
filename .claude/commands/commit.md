@@ -1,5 +1,5 @@
 ---
-description: Commit the current task's changes to main following the MM-09 workflow conventions
+description: Commit the current task's changes to main
 argument-hint: [optional note about the task / what to emphasize]
 allowed-tools: Bash(git status:*), Bash(git diff:*), Bash(git log:*), Bash(git add:*), Bash(git commit:*), Bash(git branch:*)
 ---
@@ -17,20 +17,13 @@ Note from me about this task (may be empty): $ARGUMENTS
 
 ## Your task
 
-Create a single commit for the current task, following the MM-09 conventions. Do the whole thing yourself — don't stop to ask for approval.
+Create one or more commits for the current work tree changes (stages and unstaged). If the worktree contains unrelated changes, create more than one commit (repeating below steps for each commit).
 
-### 1. Sanity-check the scope
+### 1. Stage the changes
 
-The changes above should map onto **one self-contained Ergo task** — one logical unit of work, not several batched together and not half of one. Glance at the diff and the file list:
+Stage the files that belong to this task (`git add` the specific paths, or `git add -A` if everything in the tree is part of this one task).
 
-- If it looks like more than one task got mixed in, say so and stage/commit only the files belonging to the task at hand, leaving the rest for a separate commit.
-- Tasks are sized so the diff lands roughly in the **50–250 line** range. If the change is well past ~250 lines, mention it briefly — it's a hint the task probably should have been split — but still go ahead and commit it. Don't block on it.
-
-### 2. Stage the changes
-
-Stage the files that belong to this task (`git add` the specific paths, or `git add -A` if everything in the tree is part of this one task). Don't stage unrelated edits.
-
-### 3. Write the commit message
+### 2. Write the commit message
 
 This is the part that matters most — the history should be genuinely useful to someone reading it later (including future you).
 
