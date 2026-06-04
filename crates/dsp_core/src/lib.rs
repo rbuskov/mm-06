@@ -18,10 +18,13 @@
 #![forbid(unsafe_code)]
 
 mod mathx;
-// Unused by the engine until voice-assembly wires the resonators to it; the
-// allow keeps the build warning-clean, matching `mod rng`.
+// Shared DSP building blocks, unused by the placeholder bleep until voice
+// assembly wires them in; the allow keeps the build warning-clean like `mod rng`.
 #[allow(dead_code)]
 mod excitation;
+// Shared output-stage blocks (RC amp envelope + accent-grit VCA, spec §§3.3, 3.9).
+#[allow(dead_code)]
+mod envelope;
 pub mod protocol;
 // Kept for the real engine (seeded noise + per-hit variance, spec §10); unused
 // by the placeholder bleep.
