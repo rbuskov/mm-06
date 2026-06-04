@@ -1,0 +1,16 @@
+# MM-06 dsp-harness — pinned runtime + test deps.
+# Verified on macOS / CPython 3.14 (arm64). Install into a local venv:
+#   python3 -m venv .venv
+#   .venv/bin/pip install -r ../analysis/requirements.txt   # analysis layer (numpy/scipy/soundfile/librosa)
+#   .venv/bin/pip install -r requirements.txt               # this file (mcp SDK + pytest)
+# Do NOT commit the venv (see harness/.gitignore).
+#
+# The harness IMPORTS the analysis package off sys.path (analysis/ is left
+# unmodified), so the analysis deps above must be present too.
+
+# Official MCP Python SDK (modelcontextprotocol). Used only by harness.server;
+# the tool functions in harness.tools work without it.
+mcp==1.27.2
+
+# Test runner.
+pytest==9.0.3

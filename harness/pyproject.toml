@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mm06-dsp-harness"
+version = "0.1.0"
+description = "MM-06 dsp-harness MCP server: wraps the render binary + analysis layer, exposing the calibration tool surface (calibration-and-testing-strategy.md §2.3)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+# Pinned to the versions verified on this machine (macOS / Python 3.14, arm64).
+# The harness also needs the analysis layer's deps (numpy/scipy/soundfile/
+# librosa) — install ../analysis/requirements.txt too; analysis/ is imported off
+# sys.path and left unmodified.
+dependencies = [
+    "mcp==1.27.2",
+]
+
+[project.optional-dependencies]
+test = ["pytest==9.0.3"]
+
+[project.scripts]
+dsp-harness = "harness.server:main"
+
+[tool.setuptools]
+packages = ["harness"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: cargo-backed tests that compile and run the dsp_core suite",
+]
