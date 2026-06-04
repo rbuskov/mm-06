@@ -1,0 +1,14 @@
+# dsp-harness — only source, tests, pinned deps, and docs are committed.
+.venv/
+.work/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# Generated render artifacts (the harness writes these into .work/, but guard
+# against stray copies landing elsewhere under harness/).
+*.wav
+*.json
+!references/*.wav
