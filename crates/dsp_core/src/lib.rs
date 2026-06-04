@@ -23,6 +23,8 @@ pub mod protocol;
 // by the placeholder bleep.
 #[allow(dead_code)]
 mod rng;
+#[allow(dead_code)]
+mod resonator;
 
 const TAU: f32 = core::f32::consts::TAU;
 

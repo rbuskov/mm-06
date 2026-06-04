@@ -33,11 +33,30 @@ pub fn sin(x: f32) -> f32 {
     r * (1.0 + x2 * (-1.0 / 6.0 + x2 * (1.0 / 120.0 + x2 * (-1.0 / 5040.0))))
 }
 
-/// cos(x) = sin(x + π/2). Part of the kit; not yet used by the skeleton voices
-/// but kept for the resonator/oscillator work to come.
+/// cos(x) for any real x. Range-reduce to `[-π, π]`, fold into `[0, π/2]` using
+/// `cos(π - r) = -cos(r)` and the evenness of cosine, then a 7-term *even*
+/// Taylor series in `r`. Evaluating the even series directly (rather than the
+/// old `sin(x + π/2)`, which sampled `sin` near its inaccurate peak) keeps the
+/// error small near `x = 0`, where `cos` is flat and a high-Q resonator's pole
+/// placement is most sensitive to it. Abs error stays below ~1e-4 over the
+/// magnitudes this engine uses.
 #[allow(dead_code)]
 pub fn cos(x: f32) -> f32 {
-    sin(x + HALF_PI)
+    // Reduce to [-π, π], then use evenness to work in [0, π].
+    let k = (x * (1.0 / TWO_PI) + 0.5 * x.signum()).trunc();
+    let mut r = (x - k * TWO_PI).abs();
+    // Fold [π/2, π] down into [0, π/2] via cos(π - r) = -cos(r).
+    let mut sign = 1.0f32;
+    if r > HALF_PI {
+        r = PI - r;
+        sign = -1.0;
+    }
+    // 1 - r²/2! + r⁴/4! - r⁶/6! + r⁸/8!  (Horner form in r²)
+    let x2 = r * r;
+    let c = 1.0
+        + x2 * (-1.0 / 2.0
+            + x2 * (1.0 / 24.0 + x2 * (-1.0 / 720.0 + x2 * (1.0 / 40320.0))));
+    sign * c
 }
 
 /// exp(x). Split `x` into `n·ln2 + f` with `f ∈ [0, ln2)`, evaluate `exp(f)` by a
@@ -106,6 +125,10 @@ mod tests {
             t += 0.01;
         }
         assert!(max_err < 2.0e-4, "cos max err {max_err}");
+        // The direct even series is far tighter near zero than the old
+        // sin(x+π/2); a high-Q resonator's pole placement leans on this.
+        let near0 = (cos(0.0078) - 0.0078f32.cos()).abs();
+        assert!(near0 < 1.0e-5, "cos near zero err {near0}");
     }
 
     #[test]
@@ -136,6 +159,7 @@ mod tests {
     fn deterministic_bits() {
         // Same input → same bits. The whole reason these are vendored.
         assert_eq!(sin(1.234_5).to_bits(), sin(1.234_5).to_bits());
+        assert_eq!(cos(0.007_8).to_bits(), cos(0.007_8).to_bits());
         assert_eq!(exp(-3.21).to_bits(), exp(-3.21).to_bits());
         assert_eq!(tanh(0.77).to_bits(), tanh(0.77).to_bits());
     }
