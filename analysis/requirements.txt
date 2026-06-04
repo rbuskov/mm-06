@@ -1,0 +1,15 @@
+# MM-06 analysis layer — pinned runtime + test deps.
+# Verified on macOS / CPython 3.14 (arm64). Install into a local venv:
+#   python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+# Do NOT commit the venv (see analysis/.gitignore).
+
+numpy==2.4.6
+scipy==1.17.1
+soundfile==0.13.1
+librosa==0.11.0
+
+# Test runner.
+pytest==9.0.3
+
+# Optional — matplotlib overlays for calibration reports. Uncomment to install.
+# matplotlib==3.11.0
