@@ -10,4 +10,9 @@ description = "MM-06 pure, deterministic TR-606 DSP core (dual-target: native + 
 [lib]
 crate-type = ["rlib"]
 
+[features]
+# Heavy Regime-A invariants (full block-size / sample-rate sweeps, long-decay
+# tails). `cargo test` runs the cheap set; `cargo test --features full` runs all.
+full = []
+
 [dependencies]
