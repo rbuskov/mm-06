@@ -18,6 +18,11 @@
 #![forbid(unsafe_code)]
 
 mod mathx;
+// Shared output-stage blocks (RC amp envelope + accent-grit VCA, spec §§3.3,
+// 3.9). Unused by the placeholder bleep until voice assembly — kept warning-
+// clean like `mod rng;`.
+#[allow(dead_code)]
+mod envelope;
 pub mod protocol;
 // Kept for the real engine (seeded noise + per-hit variance, spec §10); unused
 // by the placeholder bleep.
