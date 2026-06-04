@@ -99,6 +99,11 @@ impl Excitation {
     /// Return to the idle state (no pulse in flight); preserves the configured
     /// sample rate. A ticked-from-reset instance matches a freshly constructed
     /// one (spec §3.2 cross-cutting "Reset").
+    ///
+    /// Part of the shared-block API (and exercised by this module's tests); the
+    /// BD assembly retriggers rather than resetting, so the engine never calls
+    /// it yet — kept for the choke / re-arm paths of later voices (spec §9).
+    #[allow(dead_code)]
     pub fn reset(&mut self) {
         self.phase = 1.0;
         self.amp = 0.0;

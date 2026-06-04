@@ -57,8 +57,12 @@ impl Resonator {
     fn set(&mut self, sample_rate: f32, freq_hz: f32, q: f32) {
         let sr = sample_rate.max(1.0);
         // Keep the centre strictly below Nyquist; the upper guard avoids the
-        // cot/tan blow-up of the bilinear transform near fs/2.
-        let f = freq_hz.clamp(1.0, sr * 0.49);
+        // cot/tan blow-up of the bilinear transform near fs/2. At absurdly low
+        // sample rates `sr*0.49` can fall below the 1 Hz floor, so take the
+        // upper bound as the larger of the two to keep `clamp` well-ordered
+        // (a degenerate-rate guard; the design stays finite, just detuned).
+        let hi = (sr * 0.49).max(1.0);
+        let f = freq_hz.clamp(1.0, hi);
         let q = q.max(0.5);
 
         // RBJ band-pass (constant skirt gain, peak gain = Q).
@@ -121,6 +125,11 @@ impl Resonator {
 
     /// Clear the ring state (silence). Coefficients are preserved, so the next
     /// `trigger` rings identically to a fresh instance of the same design.
+    ///
+    /// Shared-block API (exercised by this module's tests); the BD always
+    /// retriggers (which re-seeds the state), so the engine never silences a
+    /// live ring yet — kept for the choke paths of later voices (spec §9).
+    #[allow(dead_code)]
     pub fn reset(&mut self) {
         self.z1 = 0.0;
         self.z2 = 0.0;

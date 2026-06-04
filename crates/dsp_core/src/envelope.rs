@@ -66,6 +66,11 @@ impl RcEnvelope {
     }
 
     /// The current multiplier, before this sample's decay step.
+    ///
+    /// Shared-block API (used by this module's tests); the BD reads its taper via
+    /// `tick`, so the engine doesn't peek the value yet — kept for voices that
+    /// need to gate other blocks off the same envelope (spec §3.4/§3.6).
+    #[allow(dead_code)]
     #[inline]
     pub fn value(&self) -> f32 {
         self.value

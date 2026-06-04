@@ -124,6 +124,13 @@ fn one_bd_hit() -> Vec<TrigEvent> {
     vec![TrigEvent { sample_index: 0, voice: Voice::Bd, accent: false }]
 }
 
+/// A standard one-hit SD event at sample 0, no accent. SD is still the
+/// placeholder 880 Hz bleep, so it carries the engine-wide "a bleep voice's
+/// features land at every sample rate" invariant now that BD is the real kick.
+fn one_sd_hit() -> Vec<TrigEvent> {
+    vec![TrigEvent { sample_index: 0, voice: Voice::Sd, accent: false }]
+}
+
 // =============================================================================
 // #1 — Determinism (bit-exact). NaN must never appear.
 // =============================================================================
@@ -202,6 +209,10 @@ fn buffer_size_independence_full_sweep() {
 // Cross-rate output is NOT byte-compared. We assert the bleep's *features*
 // land at each rate: pitch ≈ 880 Hz (via zero-crossing count), audible peak,
 // DC ≈ 0, and decay τ ≈ BASE_TAU = 0.10 s (envelope falls to ~1/e of peak).
+//
+// BD is now the real two-resonator kick (≈60/130 Hz, no fixed bleep pitch), so
+// this engine-wide "a bleep voice's features land at every sample rate" check
+// is pinned to SD — still the placeholder 880 Hz bleep.
 
 const BLEEP_FREQ_HZ: f64 = 880.0;
 const BLEEP_BASE_TAU: f64 = 0.10;
@@ -209,11 +220,11 @@ const BLEEP_BASE_TAU: f64 = 0.10;
 fn assert_bleep_features(sample_rate: f64) {
     // Render a full second so the decay tail completes.
     let len = sample_rate as usize;
-    let mut r = req(one_bd_hit(), len);
+    let mut r = req(one_sd_hit(), len);
     r.sample_rate = sample_rate;
     // render_voice gives the bleep pre-mix (no bus saturation) — cleaner for
     // feature extraction, and unity-gain so the peak reflects the bleep.
-    let out = render_voice(&r, Voice::Bd);
+    let out = render_voice(&r, Voice::Sd);
 
     for s in &out {
         assert!(s.is_finite(), "non-finite sample at {sample_rate} Hz");

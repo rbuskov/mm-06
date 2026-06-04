@@ -17,20 +17,21 @@
 
 #![forbid(unsafe_code)]
 
+use bass_drum::BassDrum;
+
 mod mathx;
-// Shared DSP building blocks, unused by the placeholder bleep until voice
-// assembly wires them in; the allow keeps the build warning-clean like `mod rng`.
-#[allow(dead_code)]
+// The bass drum (§4.1) is real: two Twin-T resonators on one shared excitation
+// edge. It uses the excitation / envelope / resonator blocks below, so those no
+// longer need a blanket dead-code allow for the parts BD touches.
+mod bass_drum;
 mod excitation;
 // Shared output-stage blocks (RC amp envelope + accent-grit VCA, spec §§3.3, 3.9).
-#[allow(dead_code)]
 mod envelope;
 pub mod protocol;
 // Kept for the real engine (seeded noise + per-hit variance, spec §10); unused
 // by the placeholder bleep.
 #[allow(dead_code)]
 mod rng;
-#[allow(dead_code)]
 mod resonator;
 
 const TAU: f32 = core::f32::consts::TAU;
@@ -183,6 +184,11 @@ const OUT_EVENT_CAP: usize = 256;
 pub struct Engine {
     global_sample: u64,
 
+    // BD (index 0) is the real two-resonator kick (spec §4.1); the other six
+    // voices are still the placeholder bleep. `voices[0]` is left unused and
+    // silent — the mix loop drives `bd` for slot 0 and `voices[1..]` for the
+    // rest, behind the same trigger/level/accent interface.
+    bd: BassDrum,
     voices: [Bleep; VOICE_COUNT],
     levels: [Smoother; VOICE_COUNT],
     master: Smoother,
@@ -199,6 +205,7 @@ impl Engine {
         let sr = sample_rate;
         Self {
             global_sample: 0,
+            bd: BassDrum::new(sr),
             voices: core::array::from_fn(|_| Bleep::new(sr)),
             levels: core::array::from_fn(|_| Smoother::new(0.5, sr)),
             master: Smoother::new(0.8, sr),
@@ -259,14 +266,22 @@ impl Engine {
     }
 
     fn fire(&mut self, voice: Voice, accent: bool) {
-        // Accent only nudges loudness + decay, identically for every voice.
-        let energy = if accent { 1.0 + 0.5 * self.accent_level } else { 1.0 };
-        let tau = if accent {
-            Bleep::BASE_TAU * (1.0 + 0.5 * self.accent_level)
+        if voice == Voice::Bd {
+            // The real kick (spec §4.1): accent scales the shared excitation edge
+            // → louder + longer ring on both resonators (+ VCA grit), not a pure
+            // gain bump. The per-voice LEVEL still mixes it like any other voice.
+            self.bd.trigger(accent, self.accent_level);
         } else {
-            Bleep::BASE_TAU
-        };
-        self.voices[voice.idx()].trigger(energy, tau);
+            // Placeholder bleep for the other six voices: accent only nudges
+            // loudness + decay, identically for each.
+            let energy = if accent { 1.0 + 0.5 * self.accent_level } else { 1.0 };
+            let tau = if accent {
+                Bleep::BASE_TAU * (1.0 + 0.5 * self.accent_level)
+            } else {
+                Bleep::BASE_TAU
+            };
+            self.voices[voice.idx()].trigger(energy, tau);
+        }
 
         if self.out_events.len() + protocol::FRAME_LEN <= OUT_EVENT_CAP * protocol::FRAME_LEN {
             let f = protocol::encode(protocol::TAG_VOICE_FIRED, voice as u8, accent as u8, 0.0);
@@ -291,9 +306,17 @@ impl Engine {
                 }
             }
 
+            // Slot 0 is the real BD; slots 1..7 are the placeholder bleep. Every
+            // voice's per-sample level smoother is ticked exactly once so the
+            // mixer/level path is unchanged from before.
             let mut mix = 0.0;
             for v in 0..VOICE_COUNT {
-                mix += self.voices[v].tick() * self.levels[v].tick();
+                let sample = if v == Voice::Bd.idx() {
+                    self.bd.tick()
+                } else {
+                    self.voices[v].tick()
+                };
+                mix += sample * self.levels[v].tick();
             }
 
             let master = self.master.tick();
@@ -442,18 +465,20 @@ mod tests {
     }
 
     #[test]
-    fn all_voices_sound_identical() {
-        // The placeholder plays the same bleep for every voice: each voice
-        // rendered in isolation at the same onset is byte-identical.
+    fn six_bleeps_identical_and_bd_differs() {
+        // BD (slot 0) is now the real two-resonator kick (spec §4.1). The OTHER
+        // six voices are still the same placeholder bleep, so rendered in
+        // isolation at the same onset they are byte-identical to each other — and
+        // the real BD must DIFFER from them (it's a kick, not an 880 Hz bleep).
         let len = 8000;
         let reference: Vec<u32> = render_voice(
-            &req(vec![TrigEvent { sample_index: 0, voice: Voice::Bd, accent: false }], len),
-            Voice::Bd,
+            &req(vec![TrigEvent { sample_index: 0, voice: Voice::Sd, accent: false }], len),
+            Voice::Sd,
         )
         .iter()
         .map(|x| x.to_bits())
         .collect();
-        for v in [Voice::Sd, Voice::Lt, Voice::Ht, Voice::Cy, Voice::Oh, Voice::Ch] {
+        for v in [Voice::Lt, Voice::Ht, Voice::Cy, Voice::Oh, Voice::Ch] {
             let got: Vec<u32> = render_voice(
                 &req(vec![TrigEvent { sample_index: 0, voice: v, accent: false }], len),
                 v,
@@ -461,8 +486,18 @@ mod tests {
             .iter()
             .map(|x| x.to_bits())
             .collect();
-            assert_eq!(got, reference, "{v:?} differs from BD bleep");
+            assert_eq!(got, reference, "{v:?} differs from the SD bleep");
         }
+
+        // The real kick is a different sound from the bleep.
+        let bd: Vec<u32> = render_voice(
+            &req(vec![TrigEvent { sample_index: 0, voice: Voice::Bd, accent: false }], len),
+            Voice::Bd,
+        )
+        .iter()
+        .map(|x| x.to_bits())
+        .collect();
+        assert_ne!(bd, reference, "BD should no longer match the placeholder bleep");
     }
 
     #[test]
