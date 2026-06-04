@@ -1,6 +1,6 @@
 ---
-description: Implement one or more ergo tasks, fanning out to parallel worktree-isolated agents
-argument-hint: [task-id...] | [epic-id] | (blank = all ready tasks)
+description: Implement one or more ergo tasks (and anything they unblock), fanning out to parallel worktree-isolated agents
+argument-hint: [task-id...] | [epic-id] | (blank = drain all implementable tasks)
 allowed-tools: Agent, Bash(ergo:*), Bash(git worktree:*), Bash(git branch:*), Bash(git merge:*), Bash(git switch:*), Bash(git checkout:*), Bash(git status:*), Bash(git log:*), Bash(git diff:*), Bash(cargo test:*), Bash(hostname:*), Read, Grep, Glob
 ---
 
@@ -12,62 +12,62 @@ allowed-tools: Agent, Bash(ergo:*), Bash(git worktree:*), Bash(git branch:*), Ba
 - Full task graph: !`ergo --json list --all`
 - Existing worktrees: !`git worktree list`
 
-Target (task IDs, an epic ID, or blank for all ready): $ARGUMENTS
+Target (task IDs, an epic ID, or blank to drain everything): $ARGUMENTS
 
 ## Your task
 
-You are the **orchestrator**. Implement the requested ergo task(s), running independent ones in parallel as worktree-isolated subagents, then integrate everything onto `main` yourself. Follow `CLAUDE.md` → *Ergo feature plans*. All ergo bookkeeping happens here in the **main** worktree; subagents never touch `.ergo/`. Never push.
+You are the **orchestrator**. Implement the requested ergo work, running independent tasks in parallel as fresh worktree-isolated subagents and integrating each onto `main` yourself. Follow `CLAUDE.md` → *Ergo feature plans*. All ergo bookkeeping happens here in the **main** worktree; subagents never touch `.ergo/`. Never push.
 
-### 1. Resolve the target set
+Crucially, this runs in **waves**: finishing one task can unblock others, and those must get implemented too. Keep going until the requested scope is fully drained — don't stop after the first batch.
 
-From the argument:
-- **blank** → every task in *Ready tasks* above.
-- **task IDs** (6-char) → exactly those. Each must be ready (state `todo` with all deps `done`); skip and report any that aren't.
-- **an epic ID** → its child tasks that are ready (`ergo --json show <epic>` for children).
+### 1. Resolve the scope
 
-If the set is empty, say so and stop.
+The scope is the universe of tasks you're allowed to implement. From the argument:
+- **blank** → every not-yet-`done` task in the graph (drain the whole plan).
+- **an epic ID** → all of that epic's child tasks (implement the entire epic).
+- **task IDs** (6-char) → exactly those, and nothing else. (If one depends on another in the list, that's fine — the wave loop will order them; if it depends on something *outside* the list that isn't `done`, it can never run — report it and move on.)
 
-### 2. Decide what runs in parallel
+If the scope is empty, say so and stop.
 
-Ready tasks have no *unmet dependency*, but they can still collide on files. Read each task body (`ergo --json show <id>`) and judge file overlap:
-- **Independent + low overlap** → run in parallel (separate worktrees).
-- **Heavy overlap** (would edit the same regions of the same file) → run those serially, one worktree reused or one after another.
-- A trivial overlap (e.g. both add a `mod` line to `lib.rs`) is fine to parallelize — you resolve it at merge.
+### 2. Run in waves (the loop)
 
-State the batch plan before spawning: which tasks run in parallel, which serially, and why.
+Repeat until done:
 
-**Single task:** skip worktrees entirely — implement it directly here on `main`, run its tests, commit, mark it `done`. Done.
+**a. Find this wave's ready set** — the in-scope tasks that are ready *right now* (state `todo`, all dependencies `done`): intersect `ergo --json list --ready` with the scope.
 
-### 3. Claim + spawn (per parallel task)
+- If the ready set is **non-empty** → run a wave (steps b–f), then loop back to (a).
+- If it's **empty**:
+  - If every in-scope task is `done` → finished, go to step 3.
+  - If in-scope tasks remain but none are ready → they're blocked by an `error`/`blocked` task or by out-of-scope unfinished work. **Stop** (no progress is possible) and report what's stuck and why.
 
-For each task in the parallel batch, **in the main worktree**:
+**b. Decide parallel vs. serial.** Ready tasks have no unmet dependency, but can still collide on files. Read each body (`ergo --json show <id>`) and judge file overlap: independent + low-overlap run in parallel; heavy-overlap (same regions of the same file) run serially. A trivial overlap (e.g. both add a `mod` line to `lib.rs`) is fine — you resolve it at merge. State the wave's plan before spawning.
 
+**c. Claim + spawn**, per task in the wave, from the main worktree:
 1. Claim it: `ergo claim <id> --agent opus@<short-host>`.
-2. Create its worktree + branch off current `main`:
+2. **If the wave has only one task**, skip worktrees: spawn one fresh subagent that works in the **main** worktree and commits to `main` directly.
+   **If the wave has 2+ tasks**, give each its own worktree + branch off current `main`:
    `git worktree add -b task/<id> .claude/worktrees/<id> HEAD`
-3. Spawn a fresh subagent (the `Task` tool — clean context, **no** `isolation`, since you made the worktree). Give it a self-contained prompt — it knows nothing of this conversation. Include:
-   - The absolute worktree path `…/.claude/worktrees/<id>`, and the instruction to do **all** its work there (treat it as the repo root; never edit files outside it).
+3. Spawn a fresh subagent (the `Agent` tool — clean context, **no** `isolation`, since you manage the worktree). The prompt must be self-contained; the subagent knows nothing of this conversation. Include:
+   - The absolute path it must treat as its repo root (the worktree path, or the main repo for a solo task), and the rule to edit **only** files under that path.
    - The full task body from `ergo --json show <id>` (goal / scope / testing / done-when).
-   - Spec pointers it should read (e.g. `documents/audio-engine-spec.md §3.1`, `documents/calibration-and-testing-strategy.md §3`).
-   - Rules: implement the task; add the automated and/or manual tests the task requires; run `cargo test` (from inside the worktree) and confirm green; then make **exactly one** commit on the current branch (`task/<id>`) following the message style in `git log`. **Do not push. Do not run `ergo` or touch `.ergo/`.**
-   - Ask it to report back: the commit SHA, a one-line summary, test results, and any blockers.
+   - Spec pointers to read (e.g. `documents/audio-engine-spec.md §3.1`, `documents/calibration-and-testing-strategy.md §3`).
+   - Rules: implement the task; add the automated and/or manual tests it requires; run `cargo test` from inside that path and confirm green; then make **exactly one** commit (on `task/<id>` for a worktree task, or on `main` for a solo task) matching the message style in `git log`. **Do not push. Do not run `ergo` or touch `.ergo/`.**
+   - Ask it to report: commit SHA, one-line summary, test results, blockers.
 
-Spawn the parallel batch in one message (multiple `Task` calls) so they run concurrently. Prefer `run_in_background` for batches of 3+.
+   Spawn a multi-task wave in one message (multiple `Agent` calls, `run_in_background` for 3+) so they run concurrently.
 
-### 4. Collect results
-
-As each subagent returns:
+**d. Collect**, as each subagent returns:
 - **Success** (committed, tests green) → `ergo set <id> '{"state":"done"}'`.
-- **Failed / blocked** → `ergo set <id> '{"state":"error"}'` (keeps the claim) or `blocked`, and keep its worktree for inspection. Report what went wrong.
+- **Failed/blocked** → `ergo set <id> '{"state":"error"}'` (or `blocked`), keep its worktree for inspection, report what went wrong. A failed task may leave its dependents permanently unready — that's expected; the loop will detect it in step (a).
 
-### 5. Integrate onto main
+**e. Integrate onto main** (skip for a solo task that already committed to `main`):
+1. Merge each successful branch in dependency order: `git merge --no-ff task/<id>`.
+2. Resolve trivial overlaps (e.g. the `mod` list in `lib.rs`) and complete the merge.
+3. Run the **full** `cargo test` once on `main`. If it fails, fix the integration here, or revert the offending merge and re-open that task as `error`.
+4. Remove spent worktrees/branches: `git worktree remove .claude/worktrees/<id>` then `git branch -d task/<id>`.
 
-Once the batch is in, merge yourself — the human does **not**:
-1. Merge each successful branch into `main` in dependency order: `git merge --no-ff task/<id>`.
-2. Resolve trivial overlaps (e.g. a `mod` list in `lib.rs`) and complete the merge.
-3. After all merges, run the **full** `cargo test` once on `main`. If it fails, fix the integration here (or revert the offending merge and re-open that task as `error`).
-4. Remove spent worktrees and branches: `git worktree remove .claude/worktrees/<id>` then `git branch -d task/<id>`.
+**f. Loop back to (a)** — completing this wave may have unblocked more in-scope tasks.
 
-### 6. Report
+### 3. Report
 
-Summarize: which tasks landed (with commit SHAs now on `main`), which didn't and why, the post-merge test result, and what's newly ready in the graph (`ergo --json list --ready`). Nothing was pushed, so note the human can `git reset` if unhappy.
+Summarize across all waves: which tasks landed (with the commit SHAs now on `main`), which didn't and why, the final post-merge test result, and what (if anything) remains and its state (`ergo --json list --all`). Nothing was pushed, so note the human can `git reset` if unhappy.
