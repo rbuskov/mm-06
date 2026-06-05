@@ -36,6 +36,13 @@ mod resonator;
 
 const TAU: f32 = core::f32::consts::TAU;
 
+/// Representative bus program level the Drive makeup is referenced to (spec §7).
+/// The auto-makeup preserves loudness at *this* amplitude rather than at zero,
+/// so turning Drive up compresses peaks (adds saturation) without dropping the
+/// overall level. Sized to a typical mixed-bus peak; `→ 0` would recover the old
+/// slope-at-zero `tanh(x·k)/k` that let Drive go quiet.
+const BUS_REF: f32 = 0.3;
+
 /// The seven voices, in kit order (dev-ui-spec.md). The discriminant is the
 /// wire id used by the message protocol.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -324,13 +331,18 @@ impl Engine {
             let mut out = mix * master;
             if self.bus_enabled {
                 // Bus soft-saturation (spec §7) with auto makeup gain: scale the
-                // input into tanh by k and divide the output by k. The
-                // small-signal (linear) gain is then tanh'(0)·k/k = 1 for any
-                // drive, so turning Drive up adds saturation, not level — peaks
-                // compress as drive rises rather than getting louder. drive 0
-                // ⇒ k = 1 ⇒ a gentle unity tanh (clean).
+                // input into tanh by k, then renormalise so a *representative
+                // program level* `BUS_REF` passes at the same loudness for any
+                // drive. The naive `tanh(x·k)/k` only normalises the slope at
+                // zero (the `BUS_REF → 0` limit), so it holds unity for
+                // infinitesimal signals while real peaks — which sit well up the
+                // tanh curve — collapse: Drive got audibly *quieter*. Referencing
+                // a realistic level keeps RMS roughly constant as drive rises;
+                // peaks still compress (that *is* the saturation), loudness holds.
+                // drive 0 ⇒ k = 1 ⇒ makeup = 1 ⇒ the same gentle unity tanh.
                 let k = 1.0 + 4.0 * drive;
-                out = mathx::tanh(out * k) / k;
+                let makeup = mathx::tanh(BUS_REF) / mathx::tanh(k * BUS_REF);
+                out = mathx::tanh(out * k) * makeup;
             }
 
             out_left[i] = out;
@@ -505,30 +517,60 @@ mod tests {
         // Drive adds saturation, not loudness: peak at full drive must not
         // exceed the clean peak (it may compress a little), and must stay in a
         // sane band — never the old ~2x jump.
-        fn peak_at_drive(d: f32) -> f32 {
-            let mut e = Engine::new(48_000.0);
-            e.set_master_level(0.8);
-            e.set_level(Voice::Bd, 0.5);
-            e.set_drive(d);
-            let mut l = [0.0f32; 128];
-            let mut r = [0.0f32; 128];
-            for _ in 0..40 {
-                e.process(&mut l, &mut r); // settle the drive smoother on silence
-            }
-            e.trigger(Voice::Bd, false);
-            let mut peak = 0.0f32;
-            for _ in 0..200 {
-                e.process(&mut l, &mut r);
-                for &x in &l {
-                    peak = peak.max(x.abs());
-                }
-            }
-            peak
-        }
         let clean = peak_at_drive(0.0);
         let driven = peak_at_drive(1.0);
         assert!(driven <= clean * 1.05, "drive boosted level: {clean} -> {driven}");
         assert!(driven >= clean * 0.5, "drive over-attenuated: {clean} -> {driven}");
+    }
+
+    #[test]
+    fn drive_preserves_loudness() {
+        // The makeup is referenced to a real program level, so turning Drive up
+        // compresses peaks but holds overall loudness (RMS) roughly constant —
+        // it must NOT go quiet (the old `/k` makeup dropped RMS ~3 dB and peak
+        // ~9 dB at full drive). Allow a modest band either side of unity.
+        let clean = rms_at_drive(0.0);
+        let driven = rms_at_drive(1.0);
+        let ratio = driven / clean;
+        assert!(
+            (0.85..=1.5).contains(&ratio),
+            "drive shifted loudness too far: rms {clean} -> {driven} (ratio {ratio:.2})"
+        );
+    }
+
+    /// Render a single (unaccented) BD hit through the full bus at drive `d`,
+    /// returning the output peak.
+    fn peak_at_drive(d: f32) -> f32 {
+        drive_stats(d).0
+    }
+    /// As [`peak_at_drive`] but returns the output RMS over the hit.
+    fn rms_at_drive(d: f32) -> f32 {
+        drive_stats(d).1
+    }
+    /// (peak, rms) of one BD hit through the full bus at drive `d`.
+    fn drive_stats(d: f32) -> (f32, f32) {
+        let mut e = Engine::new(48_000.0);
+        e.set_master_level(0.8);
+        e.set_level(Voice::Bd, 0.5);
+        e.set_drive(d);
+        let mut l = [0.0f32; 128];
+        let mut r = [0.0f32; 128];
+        for _ in 0..40 {
+            e.process(&mut l, &mut r); // settle the drive smoother on silence
+        }
+        e.trigger(Voice::Bd, false);
+        let mut peak = 0.0f32;
+        let mut sumsq = 0.0f64;
+        let mut n = 0u64;
+        for _ in 0..200 {
+            e.process(&mut l, &mut r);
+            for &x in &l {
+                peak = peak.max(x.abs());
+                sumsq += (x as f64) * (x as f64);
+                n += 1;
+            }
+        }
+        (peak, (sumsq / n as f64).sqrt() as f32)
     }
 
     #[test]
