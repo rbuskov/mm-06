@@ -48,8 +48,13 @@ const BASE_EDGE: f32 = 0.9;
 
 /// Extra excitation an accent adds on top of [`BASE_EDGE`], at `accent_level`
 /// 1.0. Accent raises the ping (louder + longer ring) and the VCA grit — never
-/// a pure output-gain change (spec §2.3).
-const ACCENT_EDGE: f32 = 0.7;
+/// a pure output-gain change (spec §2.3). Sized so a full accent ≈ 2.7× the
+/// plain edge: the kick clearly jumps forward (≈ +6 dB through the bus) and
+/// rings audibly longer, and the louder front edge starts to drive the
+/// downstream bus tanh into the gentle compression that reads as "punch" — far
+/// more than the old timid 1.8× swing, which graded the accent only ~4 dB and
+/// read as no effect at all.
+const ACCENT_EDGE: f32 = 1.5;
 
 /// Ring make-up gain into the **VCA input**. A single-impulse ping of a
 /// low-frequency constant-skirt band-pass produces a tiny absolute swing (the
@@ -57,7 +62,7 @@ const ACCENT_EDGE: f32 = 0.7;
 /// summed ring is brought up here. This is sized to keep the VCA input in its
 /// near-linear region (so the accent-grit `tanh` adds harmonics without
 /// swallowing the accent's extra loudness): a plain hit reaches ≈ 0.05 at the
-/// VCA input, an accented one ≈ 0.10. Pure gain, applied equally to both
+/// VCA input, a full-accent one ≈ 0.14. Pure gain, applied equally to both
 /// resonators — never pitch or the in-phase/beating relationship.
 const RING_GAIN: f32 = 5.0;
 
@@ -381,6 +386,39 @@ mod tests {
             audible_len(&acc, floor) > audible_len(&plain, floor),
             "accent did not ring longer"
         );
+    }
+
+    #[test]
+    fn accent_level_grades_loudness_and_ring() {
+        // The global accent LEVEL must *grade* the hit, not just flip on/off:
+        // raising accent_level (accent engaged) makes every step both louder and
+        // longer-ringing. This is the property that was effectively absent when
+        // ACCENT_EDGE was too small — the slider "had no effect" on the BD.
+        let floor = 1.0e-3;
+        let n = SR as usize;
+        let mut prev_peak = 0.0f32;
+        let mut prev_len = 0usize;
+        for (i, &lvl) in [0.0f32, 0.25, 0.5, 0.75, 1.0].iter().enumerate() {
+            let buf = render(true, lvl, n);
+            let p = peak(&buf);
+            let l = audible_len(&buf, floor);
+            if i > 0 {
+                assert!(
+                    p > prev_peak,
+                    "accent level {lvl} not louder than the previous step ({p} !> {prev_peak})"
+                );
+                assert!(
+                    l > prev_len,
+                    "accent level {lvl} did not ring longer than the previous step ({l} !> {prev_len})"
+                );
+            }
+            prev_peak = p;
+            prev_len = l;
+        }
+        // And the full sweep is a substantial change end to end (not a token nudge).
+        let lo = peak(&render(true, 0.0, n));
+        let hi = peak(&render(true, 1.0, n));
+        assert!(hi > lo * 1.8, "accent level sweep too weak: {lo} -> {hi}");
     }
 
     #[test]
