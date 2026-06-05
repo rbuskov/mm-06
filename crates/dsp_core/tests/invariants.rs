@@ -267,18 +267,18 @@ fn assert_bleep_features(sample_rate: f64) {
     let tau_sample = tau_sample.expect("envelope never decayed to 1/e");
     let tau_s = tau_sample as f64 / sample_rate;
 
-    // The feature we require: the bleep has a short, exponential decay roughly
-    // on the order of BASE_TAU (0.10 s), at EVERY sample rate. We assert a sane
-    // band, not a tight tolerance, on purpose: the placeholder's per-sample
-    // decay uses `mathx::exp(-1/(τ·sr))`, whose tiny approximation error near 0
-    // compounds over the (sr-dependent) sample count, so the *effective* τ
-    // drifts with sample rate (~0.074 s @ 44.1 kHz → ~0.055 s @ 96 kHz). That
-    // is a known property of the placeholder engine — the invariant here is
-    // "the bleep decays exponentially on a ~0.1 s order at each rate", which is
-    // what lands. (The real voices get tight Regime-B decay-time targets.)
+    // The feature we require: the bleep decays exponentially with τ ≈ BASE_TAU
+    // (0.10 s), at EVERY sample rate. `mathx::exp` now uses round-to-nearest
+    // range reduction, so the per-sample decay coefficient `exp(-1/(τ·sr))` is
+    // accurate (~4e-6 rel) and the measured τ lands near nominal and is
+    // sample-rate-independent — it used to read ~0.055–0.074 s because the old
+    // floor-reduced `exp` error compounded over the (sr-dependent) sample count.
+    // The band stays a band (not an exact equality) only because this estimator
+    // is coarse: it steps in ~one-period windows. (Real voices get tight
+    // Regime-B decay-time targets.)
     assert!(
-        (0.03..=0.15).contains(&tau_s),
-        "decay τ {tau_s:.4}s out of sane band [0.03,0.15] at {sample_rate} Hz \
+        (0.075..=0.125).contains(&tau_s),
+        "decay τ {tau_s:.4}s out of band [0.075,0.125] at {sample_rate} Hz \
          (nominal BASE_TAU {BLEEP_BASE_TAU}s)"
     );
 }

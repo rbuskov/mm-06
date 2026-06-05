@@ -16,8 +16,9 @@ const TWO_PI: f32 = 2.0 * PI;
 const HALF_PI: f32 = PI / 2.0;
 
 /// sin(x) for any real x. Range-reduce to `[-π, π]`, fold into `[-π/2, π/2]`
-/// via `sin(π - r) = sin(r)`, then a 7-term odd Taylor series. Abs error stays
-/// below ~1e-4 over the magnitudes this engine uses.
+/// via `sin(π - r) = sin(r)`, then an odd Taylor series through `r⁹`. Abs error
+/// stays below ~4e-6 over the magnitudes this engine uses (the `r⁹` term cut the
+/// old ~1.6e-4 residual near ±π/2, where every oscillator spends time).
 pub fn sin(x: f32) -> f32 {
     // Reduce to [-π, π].
     let k = (x * (1.0 / TWO_PI) + 0.5 * x.signum()).trunc();
@@ -28,18 +29,20 @@ pub fn sin(x: f32) -> f32 {
     } else if r < -HALF_PI {
         r = -PI - r;
     }
-    // r - r³/3! + r⁵/5! - r⁷/7!  (Horner form in r²)
+    // r - r³/3! + r⁵/5! - r⁷/7! + r⁹/9!  (Horner form in r²)
     let x2 = r * r;
-    r * (1.0 + x2 * (-1.0 / 6.0 + x2 * (1.0 / 120.0 + x2 * (-1.0 / 5040.0))))
+    r * (1.0
+        + x2 * (-1.0 / 6.0
+            + x2 * (1.0 / 120.0 + x2 * (-1.0 / 5040.0 + x2 * (1.0 / 362_880.0)))))
 }
 
 /// cos(x) for any real x. Range-reduce to `[-π, π]`, fold into `[0, π/2]` using
-/// `cos(π - r) = -cos(r)` and the evenness of cosine, then a 7-term *even*
-/// Taylor series in `r`. Evaluating the even series directly (rather than the
+/// `cos(π - r) = -cos(r)` and the evenness of cosine, then an even Taylor series
+/// in `r` through `r¹⁰`. Evaluating the even series directly (rather than the
 /// old `sin(x + π/2)`, which sampled `sin` near its inaccurate peak) keeps the
 /// error small near `x = 0`, where `cos` is flat and a high-Q resonator's pole
-/// placement is most sensitive to it. Abs error stays below ~1e-4 over the
-/// magnitudes this engine uses.
+/// placement is most sensitive to it. The `r¹⁰` term trims the residual near
+/// ±π/2 too; abs error stays below ~1e-6 over the magnitudes this engine uses.
 #[allow(dead_code)]
 pub fn cos(x: f32) -> f32 {
     // Reduce to [-π, π], then use evenness to work in [0, π].
@@ -51,18 +54,28 @@ pub fn cos(x: f32) -> f32 {
         r = PI - r;
         sign = -1.0;
     }
-    // 1 - r²/2! + r⁴/4! - r⁶/6! + r⁸/8!  (Horner form in r²)
+    // 1 - r²/2! + r⁴/4! - r⁶/6! + r⁸/8! - r¹⁰/10!  (Horner form in r²)
     let x2 = r * r;
     let c = 1.0
         + x2 * (-1.0 / 2.0
-            + x2 * (1.0 / 24.0 + x2 * (-1.0 / 720.0 + x2 * (1.0 / 40320.0))));
+            + x2 * (1.0 / 24.0
+                + x2 * (-1.0 / 720.0 + x2 * (1.0 / 40320.0 + x2 * (-1.0 / 3_628_800.0)))));
     sign * c
 }
 
-/// exp(x). Split `x` into `n·ln2 + f` with `f ∈ [0, ln2)`, evaluate `exp(f)` by a
-/// short Taylor series, and scale by `2^n` through the IEEE exponent field. Hard
-/// clamps keep the bounded negative arguments of the envelope decays away from
-/// overflow and denormals.
+/// exp(x). Split `x` into `n·ln2 + f`, evaluate `exp(f)` by a short Taylor
+/// series, and scale by `2^n` through the IEEE exponent field. Hard clamps keep
+/// the bounded negative arguments of the envelope decays away from overflow and
+/// denormals.
+///
+/// `n` is chosen by **round-to-nearest**, not floor, so the residual lands in
+/// `[-ln2/2, ln2/2]` and the series is evaluated close to 0 — where five terms
+/// are tight (~4e-6). Floor left `f` near `ln2≈0.693`, where the truncation
+/// error was ~1e-4; that mattered because the decay coefficient `exp(-1/(τ·sr))`
+/// is raised to thousands of powers, and the error compounded into a visibly
+/// short decay (an effective τ of ~0.07 s for a nominal 0.10 s). Round-to-nearest
+/// is expressed with the same `+ ½·signum` then `trunc` idiom `sin` uses, so it
+/// stays on primitive ops and keeps native↔wasm bit-parity.
 pub fn exp(x: f32) -> f32 {
     if x <= -87.0 {
         return 0.0;
@@ -73,8 +86,9 @@ pub fn exp(x: f32) -> f32 {
     const LOG2E: f32 = 1.442_695_f32;
     const LN2: f32 = 0.693_147_18_f32;
 
-    let n = (x * LOG2E).floor();
-    let f = x - n * LN2; // residual in [0, ln2)
+    let kf = x * LOG2E;
+    let n = (kf + 0.5 * kf.signum()).trunc();
+    let f = x - n * LN2; // residual in [-ln2/2, ln2/2]
     // 1 + f + f²/2! + … + f⁵/5!
     let p = 1.0 + f * (1.0 + f * (0.5 + f * (1.0 / 6.0 + f * (1.0 / 24.0 + f * (1.0 / 120.0)))));
     ldexp2(p, n as i32)
@@ -113,7 +127,7 @@ mod tests {
             max_err = max_err.max((sin(t) - t.sin()).abs());
             t += 0.01;
         }
-        assert!(max_err < 2.0e-4, "sin max err {max_err}");
+        assert!(max_err < 8.0e-6, "sin max err {max_err}");
     }
 
     #[test]
@@ -124,7 +138,7 @@ mod tests {
             max_err = max_err.max((cos(t) - t.cos()).abs());
             t += 0.01;
         }
-        assert!(max_err < 2.0e-4, "cos max err {max_err}");
+        assert!(max_err < 2.0e-6, "cos max err {max_err}");
         // The direct even series is far tighter near zero than the old
         // sin(x+π/2); a high-Q resonator's pole placement leans on this.
         let near0 = (cos(0.0078) - 0.0078f32.cos()).abs();
@@ -141,7 +155,7 @@ mod tests {
             max_rel = max_rel.max(((got - want) / want).abs());
             t += 0.01;
         }
-        assert!(max_rel < 1.0e-3, "exp max rel err {max_rel}");
+        assert!(max_rel < 8.0e-6, "exp max rel err {max_rel}");
     }
 
     #[test]
@@ -152,7 +166,7 @@ mod tests {
             max_err = max_err.max((tanh(t) - t.tanh()).abs());
             t += 0.01;
         }
-        assert!(max_err < 6.0e-3, "tanh max err {max_err}");
+        assert!(max_err < 5.0e-6, "tanh max err {max_err}");
     }
 
     #[test]

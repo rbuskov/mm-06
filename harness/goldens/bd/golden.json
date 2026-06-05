@@ -1,21 +1,21 @@
 {
   "blessed": {
-    "at_utc": "2026-06-05T00:24:07.363382+00:00",
+    "at_utc": "2026-06-05T00:38:14.310444+00:00",
     "previously_blessed": true,
-    "reason": "Anchor BD default operating point to bd.wav on shape (regime C); shape match within tolerance, no constant moves"
+    "reason": "mathx accuracy fix (round-to-nearest exp + extra sin/cos terms)"
   },
   "metric_vector": {
-    "dc_offset": -9.280001643232557e-05,
-    "decay.tau_e": 0.017681260062660152,
-    "fundamental": 59.92236346895523,
+    "dc_offset": -3.917189017030864e-07,
+    "decay.tau_e": 0.01890498892787549,
+    "fundamental": 59.920882364109325,
     "peak": 0.4885265529155731,
-    "rms": 0.04117759948812403,
-    "spectral_centroid": 60.03686658500147
+    "rms": 0.04366674113629055,
+    "spectral_centroid": 59.84983657334089
   },
   "name": "bd",
   "overrides": {},
   "regime": "B/C",
-  "render_hash": "f0ee938ee3e75100308b2bca8780d0517bb0772d3984837b2495ee2383c266f8",
+  "render_hash": "ad3e87dad78400f369dd7dd7aec783cb0e693910c48398ac6a04839d0c9278e3",
   "request": {
     "block_size": 128,
     "events": [

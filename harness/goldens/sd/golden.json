@@ -1,21 +1,21 @@
 {
   "blessed": {
-    "at_utc": "2026-06-05T00:04:20.401214+00:00",
-    "previously_blessed": false,
-    "reason": "Establish sd bleep baseline for golden round-trip"
+    "at_utc": "2026-06-05T00:38:14.193336+00:00",
+    "previously_blessed": true,
+    "reason": "mathx accuracy fix (round-to-nearest exp + extra sin/cos terms)"
   },
   "metric_vector": {
-    "dc_offset": 0.00021656016633548347,
-    "decay.tau_e": 0.06950289790254079,
-    "fundamental": 879.9509531509617,
-    "peak": 0.5969415903091431,
-    "rms": 0.11302375962775223,
-    "spectral_centroid": 879.999720615796
+    "dc_offset": 0.00021528098323053276,
+    "decay.tau_e": 0.09794396021814682,
+    "fundamental": 879.9500100564361,
+    "peak": 0.5977292656898499,
+    "rms": 0.134158607238623,
+    "spectral_centroid": 879.999713901453
   },
   "name": "sd",
   "overrides": {},
   "regime": "B/C",
-  "render_hash": "b8b296dd3bd716f8d9c197fb65a8b64653a7e496e250653e190965e98142a183",
+  "render_hash": "74bb32cf167eeb1ba43e5de98bee532e463641d371312a27e7a25b976fadc493",
   "request": {
     "block_size": 128,
     "events": [
