@@ -1,7 +1,8 @@
 """Smoke test against a real bleep WAV produced by the ``render`` binary.
 
 Builds ``crates/render`` (``cargo build -p render``), renders an 880 Hz decaying
-sine (the placeholder ``Bleep``: FREQ_HZ=880, BASE_TAU=0.10) to a mono f32 WAV,
+sine (the placeholder ``Bleep``: FREQ_HZ=880, BASE_TAU=0.10 — via a still-bleep
+voice, since BD is now a real two-resonator kick) to a mono f32 WAV,
 analyzes it through the public ``analyze()`` entry point, and asserts the
 extractors recover the known truth:
 
@@ -57,8 +58,12 @@ def _try_real_render(out_wav):
     req = {
         "sample_rate": SR,
         "length_samples": LENGTH,
-        "voice": "bd",
-        "events": [{"sample_index": 0, "voice": "bd", "accent": False}],
+        # Use a still-bleep voice (SD): BD is now a real two-resonator kick
+        # (~60 Hz) and no longer plays the 880 Hz placeholder. The other six
+        # voices remain the identical placeholder Bleep, so SD renders the
+        # 880 Hz decaying sine this smoke test pins.
+        "voice": "sd",
+        "events": [{"sample_index": 0, "voice": "sd", "accent": False}],
     }
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
         json.dump(req, f)
