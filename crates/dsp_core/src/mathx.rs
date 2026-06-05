@@ -83,8 +83,11 @@ pub fn exp(x: f32) -> f32 {
     if x >= 88.0 {
         return f32::MAX;
     }
-    const LOG2E: f32 = 1.442_695_f32;
-    const LN2: f32 = 0.693_147_18_f32;
+    // Canonical f32 constants (compile-time, identical bits on every target, so
+    // they keep the native↔wasm parity guarantee). Bit-for-bit the same as the
+    // hand-rolled literals they replace — the computation is unchanged.
+    const LOG2E: f32 = core::f32::consts::LOG2_E;
+    const LN2: f32 = core::f32::consts::LN_2;
 
     let kf = x * LOG2E;
     let n = (kf + 0.5 * kf.signum()).trunc();
