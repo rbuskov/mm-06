@@ -19,6 +19,9 @@ from scipy.signal import butter, filtfilt, hilbert
 
 from .paths import REFERENCES_DIR
 
+# Reference clips are loaded with soundfile; imported lazily inside the regime-C
+# comparator so merely importing this module needs only numpy/scipy.
+
 
 def _extractors():
     """The analysis `extractors` module, imported lazily.
@@ -387,8 +390,19 @@ def compare_to_targets(metrics: dict, voice: str, signal=None, sr=None) -> dict:
 
 
 # -----------------------------------------------------------------------------
-# Regime C — reference-clip shape distance (plumbing).
+# Regime C — reference-clip shape match (§7, §11).
 # -----------------------------------------------------------------------------
+# Anchors a voice's DEFAULT operating point to `references/<voice>.wav` on
+# **shape only** (§7.1): never absolute level, accent, or per-hit variance. The
+# render and the clip are DC-removed, onset-aligned and amplitude-normalized
+# (§7.2.1), then compared on:
+#   * a multi-resolution log-STFT shape distance (the aggregate guide, §7.2.5);
+#   * decomposed per-feature deltas reported ALONGSIDE the scalar — the scalar is
+#     a guide, not an objective to minimise blindly, and a lower number is not
+#     automatically "more 606".
+# The per-voice decomposition lives in the per-voice extractor below; BD gets the
+# §7.3 two-resonator suite (60/130 Hz partials, Qs/decay, relative level, the
+# in-phase attack edge + beat, NO sweep).
 
 
 def reference_path(voice: str):
@@ -405,7 +419,11 @@ def _onset_index(x: np.ndarray, thresh_frac: float = 0.05) -> int:
 
 
 def _prep(x: np.ndarray) -> np.ndarray:
-    """DC-remove, onset-align (trim leading silence), normalize for shape."""
+    """DC-remove, onset-align (trim leading silence), normalize for shape.
+
+    Normalisation is the regime-C requirement that the match is **shape only**
+    (§7.1): the clip is a normalized recording, so loudness is never compared.
+    """
     x = np.asarray(x, dtype=np.float64)
     if x.size == 0:
         return x
@@ -433,9 +451,15 @@ def _log_stft_mag(x: np.ndarray, n_fft: int) -> np.ndarray:
     return np.asarray(frames)
 
 
-def _shape_distance(a: np.ndarray, b: np.ndarray) -> float:
-    """Multi-resolution log-STFT shape distance between two prepped signals."""
-    dists = []
+def _shape_distance_per_res(a: np.ndarray, b: np.ndarray) -> dict[int, float]:
+    """Per-resolution log-STFT shape distance between two prepped signals.
+
+    Three FFT sizes resolve, respectively, the fast attack/click (256), the
+    body ring (1024) and the low-frequency partial structure (4096). They are
+    reported individually as well as averaged so a single resolution being off
+    (e.g. a missing click band) is visible, not hidden in the mean.
+    """
+    out: dict[int, float] = {}
     for n_fft in (256, 1024, 4096):
         sa = _log_stft_mag(a, n_fft)
         sb = _log_stft_mag(b, n_fft)
@@ -443,17 +467,158 @@ def _shape_distance(a: np.ndarray, b: np.ndarray) -> float:
         if n == 0:
             continue
         diff = sa[:n] - sb[:n]
-        dists.append(float(np.sqrt(np.mean(diff * diff))))
-    return float(np.mean(dists)) if dists else 0.0
+        out[n_fft] = float(np.sqrt(np.mean(diff * diff)))
+    return out
+
+
+def _shape_distance(a: np.ndarray, b: np.ndarray) -> float:
+    """Aggregate multi-resolution log-STFT shape distance (the §7.2.5 guide)."""
+    per = _shape_distance_per_res(a, b)
+    return float(np.mean(list(per.values()))) if per else 0.0
+
+
+# --- decomposed shape features (reported alongside the scalar, §7.2.5) --------
+
+
+def _band_limited_centroid(x: np.ndarray, sr: float, hi_hz: float = 2000.0) -> float:
+    """Power-weighted spectral centroid below `hi_hz`.
+
+    Band-limited on purpose: the reference clip carries recording-chain hiss and
+    a sharp transient click that put ≈12% of its energy above 5 kHz — content the
+    clean synth has no business chasing (§7.1 / §11.8). Restricting the centroid
+    to the musically-relevant band (the body + click partials) makes it a fair
+    *shape* comparator instead of a recording-noise comparator.
+    """
+    x = np.asarray(x, dtype=np.float64)
+    if x.size < 4:
+        return 0.0
+    spec = np.abs(np.fft.rfft(x * np.hanning(x.size))) ** 2
+    freqs = np.fft.rfftfreq(x.size, 1.0 / sr)
+    band = freqs <= hi_hz
+    total = float(np.sum(spec[band]))
+    return float(np.sum(freqs[band] * spec[band]) / total) if total > 0 else 0.0
+
+
+def _beat_rate_hz(x: np.ndarray, sr: float) -> float:
+    """Dominant amplitude-modulation (beat) frequency in [20, 120] Hz.
+
+    The two stationary partials (≈60 & ≈130 Hz) beat; the |x| envelope is
+    modulated at roughly their difference. Peak of the post-attack envelope
+    spectrum in the plausible beat band — the §7.3 "confirm the beating against
+    the clip" check, as a number that lines up render and reference.
+    """
+    x = np.asarray(x, dtype=np.float64)
+    if x.size < 64:
+        return 0.0
+    env = np.abs(hilbert(x))
+    w = max(1, int(0.003 * sr))
+    env = np.convolve(env, np.ones(w) / w, mode="same")
+    seg = env[int(0.01 * sr) : int(0.20 * sr)]
+    if seg.size < 8:
+        return 0.0
+    seg = seg - seg.mean()
+    sp = np.abs(np.fft.rfft(seg * np.hanning(seg.size)))
+    f = np.fft.rfftfreq(seg.size, 1.0 / sr)
+    band = (f >= 20.0) & (f <= 120.0)
+    if not np.any(band):
+        return 0.0
+    return float(f[band][int(np.argmax(sp[band]))])
+
+
+def _bd_reference_features(a: np.ndarray, sr_a: float, b: np.ndarray, sr_b: float) -> list[dict]:
+    """The §7.3 BD shape decomposition: render vs clip, per feature.
+
+    Each row is (feature, rendered, reference, delta, tol, unit, kind, note).
+    `kind`:
+      * "abs"      — |rendered - reference| <= tol;
+      * "no_sweep" — pass iff BOTH render and reference stay below the sweep
+                     threshold `tol` (neither glides — the 808 guard, against the
+                     clip, never a null test);
+      * "polarity" — pass iff render and reference share attack-edge sign and the
+                     render edge is a solid (≥0.3·peak) transient.
+    `reference`/`rendered` carry the raw measured scalars for the human glance.
+    """
+    fx = _extractors()
+
+    def osc1(x, sr):
+        f, _ = _band_peak(x, sr, *_OSC1_BAND)
+        return f
+
+    def osc2(x, sr):
+        return _bd_osc2_freq(x, sr, None)
+
+    def tau(x, sr):
+        # Body-band decay (LP < 400 Hz) so the recording hiss tail can't flatten
+        # the fit; this is the §7.2.3 ring-shape match, not a loudness match.
+        bb, aa = butter(4, 400.0 / (sr / 2.0), btype="low")
+        return float(fx.decay_time(filtfilt(bb, aa, x), sr)["tau_e"])
+
+    feats = [
+        ("osc1_freq", osc1, 8.0, "Hz", "abs",
+         "OSC1 body partial centre — ≈60 Hz both (spec §4.1, §7.3)"),
+        ("osc2_freq", osc2, 15.0, "Hz", "abs",
+         "OSC2 click partial centre — ≈130 Hz; HP-recovered, OSC1-skirt bias"),
+        ("osc2_relative_level", lambda x, sr: _bd_osc2_relative_level(x, sr, None),
+         0.10, "ratio", "abs",
+         "two-partial balance: OSC2/OSC1 early-window magnitude ratio (§7.3)"),
+        ("centroid_lp_hz", lambda x, sr: _band_limited_centroid(x, sr, 2000.0),
+         40.0, "Hz", "abs",
+         "band-limited (<2 kHz) brightness — body+click weight, hiss excluded"),
+        ("decay_tau_e_s", tau, 0.020, "s", "abs",
+         "body-ring 1/e decay (LP<400 Hz) — the §7.2.3 ring/decay shape match"),
+        ("beat_rate_hz", _beat_rate_hz, 10.0, "Hz", "abs",
+         "two-resonator beat rate — confirm the beating against the clip (§7.3)"),
+        ("attack_polarity", lambda x, sr: _bd_attack_polarity(x, sr, None),
+         0.0, "frac_of_peak", "polarity",
+         "in-phase POSITIVE front edge present in both (§7.3)"),
+        ("pitch_sweep_drift", lambda x, sr: _bd_pitch_sweep_drift(x, sr, None),
+         0.25, "rel", "no_sweep",
+         "NO downward sweep in EITHER — the 808 guard against the clip (§7.3)"),
+    ]
+
+    rows = []
+    for key, fn, tol, unit, kind, note in feats:
+        rv = float(fn(a, sr_a))
+        bv = float(fn(b, sr_b))
+        delta = rv - bv
+        if kind == "no_sweep":
+            within = (rv < tol) and (bv < tol)
+        elif kind == "polarity":
+            within = (rv > 0.0) == (bv > 0.0) and abs(rv) >= 0.3
+        else:
+            within = abs(delta) <= tol
+        rows.append(
+            {
+                "feature": key,
+                "rendered": rv,
+                "reference": bv,
+                "delta": delta,
+                "tol": tol,
+                "unit": unit,
+                "kind": kind,
+                "within_tol": within,
+                "note": note,
+            }
+        )
+    return rows
+
+
+# Aggregate-shape-distance guide threshold (§7.2.5). NOT an objective to minimise
+# blindly — a sanity ceiling so a grossly mismatched render is caught, sized well
+# above the as-built BD's ≈0.036 against bd.wav with headroom for analyzer noise.
+_BD_SHAPE_DISTANCE_CEILING = 0.10
 
 
 def compare_to_reference(rendered_signal, sr_rendered, voice: str) -> dict:
     """Regime C: shape distance between a rendered signal and the reference clip.
 
     Both are DC-removed, onset-aligned, and amplitude-normalized first
-    (`§7.2`) — the distance is shape-only, never a sample-level null test.
-    Returns the scalar distance plus the decomposed centroid/RMS-envelope
-    deltas the strategy wants reported *alongside* the scalar (§7.2.5).
+    (§7.2.1) — the comparison is **shape only**, never a sample-level null test
+    and never loudness. Returns the aggregate multi-resolution log-STFT shape
+    distance (the §7.2.5 guide) AND its per-resolution split, plus the decomposed
+    per-feature shape deltas the strategy requires be reported *alongside* the
+    scalar. For BD this is the §7.3 two-resonator suite (60/130 Hz partials,
+    decay, relative level, the in-phase attack edge + beat, no sweep).
     """
     voice = voice.lower()
     ref = reference_path(voice)
@@ -475,18 +640,35 @@ def compare_to_reference(rendered_signal, sr_rendered, voice: str) -> dict:
     a = _prep(np.asarray(rendered_signal, dtype=np.float64))
     b = _prep(ref_x)
 
-    distance = _shape_distance(a, b)
+    per_res = _shape_distance_per_res(a, b)
+    distance = float(np.mean(list(per_res.values()))) if per_res else 0.0
 
-    def _centroid(x, sr):
-        if x.size == 0:
-            return 0.0
-        spec = np.abs(np.fft.rfft(x))
-        freqs = np.fft.rfftfreq(x.size, 1.0 / sr)
-        total = float(np.sum(spec))
-        return float(np.sum(freqs * spec) / total) if total > 0 else 0.0
+    if voice == "bd":
+        feature_rows = _bd_reference_features(a, float(sr_rendered), b, float(ref_sr))
+    else:
+        # Generic fallback for voices without a dedicated decomposition yet: the
+        # band-limited centroid as a single shape delta (the same shape-only
+        # philosophy; per-voice suites land as each voice goes live).
+        cr = _band_limited_centroid(a, float(sr_rendered), 4000.0)
+        cb = _band_limited_centroid(b, float(ref_sr), 4000.0)
+        feature_rows = [
+            {
+                "feature": "centroid_lp_hz",
+                "rendered": cr,
+                "reference": cb,
+                "delta": cr - cb,
+                "tol": 200.0,
+                "unit": "Hz",
+                "kind": "abs",
+                "within_tol": abs(cr - cb) <= 200.0,
+                "note": "band-limited (<4 kHz) brightness shape (generic)",
+            }
+        ]
 
-    cen_r = _centroid(a, sr_rendered)
-    cen_ref = _centroid(b, ref_sr)
+    shape_ceiling = _BD_SHAPE_DISTANCE_CEILING if voice == "bd" else None
+    all_within = all(r["within_tol"] for r in feature_rows) and (
+        shape_ceiling is None or distance <= shape_ceiling
+    )
 
     return {
         "voice": voice,
@@ -494,12 +676,13 @@ def compare_to_reference(rendered_signal, sr_rendered, voice: str) -> dict:
         "available": True,
         "reference": str(ref),
         "shape_distance": distance,
-        "feature_deltas": {
-            "spectral_centroid_hz": {
-                "rendered": cen_r,
-                "reference": cen_ref,
-                "delta": cen_r - cen_ref,
-            },
-        },
-        "note": "shape-only (normalized, onset-aligned); not a null test (§7.2)",
+        "shape_distance_per_resolution": {str(k): v for k, v in per_res.items()},
+        "shape_distance_ceiling": shape_ceiling,
+        "feature_deltas": feature_rows,
+        "all_within_tol": all_within,
+        "note": (
+            "shape-only (normalized, onset-aligned, DC-removed); the scalar is a "
+            "GUIDE reported alongside the decomposed deltas, never a null test "
+            "and never loudness (§7.1/§7.2)"
+        ),
     }

@@ -17,3 +17,8 @@ __pycache__/
 # blessed metric-vector + render-hash JSON under goldens/ is the tracked
 # baseline; only transient working renders (.work/) are ignored above.
 !goldens/**/golden.json
+
+# Regime-C overlay artifacts (render-vs-clip spectrogram / decay / pitch, §7).
+# The PNGs are small and committed for the one human glance; the matplotlib-free
+# curve-data fallback (overlay_data.json) is committed alongside them.
+!goldens/**/overlays/overlay_data.json

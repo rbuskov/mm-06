@@ -1,8 +1,8 @@
 {
   "blessed": {
-    "at_utc": "2026-06-05T00:14:28.458877+00:00",
-    "previously_blessed": false,
-    "reason": "Freeze bass-drum regime-B numeric baseline (\u00a76 BD targets within tolerance)"
+    "at_utc": "2026-06-05T00:24:07.363382+00:00",
+    "previously_blessed": true,
+    "reason": "Anchor BD default operating point to bd.wav on shape (regime C); shape match within tolerance, no constant moves"
   },
   "metric_vector": {
     "dc_offset": -9.280001643232557e-05,

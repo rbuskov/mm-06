@@ -84,7 +84,11 @@ def test_compare_to_reference_shape_distance():
     assert result["available"] is True
     assert isinstance(result["shape_distance"], float)
     assert result["shape_distance"] >= 0.0
-    assert "spectral_centroid_hz" in result["feature_deltas"]
+    # Decomposed per-feature deltas are reported ALONGSIDE the scalar (§7.2.5);
+    # voices without a dedicated suite get the generic band-limited centroid row.
+    assert isinstance(result["feature_deltas"], list)
+    feats = {r["feature"] for r in result["feature_deltas"]}
+    assert "centroid_lp_hz" in feats
 
 
 # --- write side --------------------------------------------------------------
