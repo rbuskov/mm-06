@@ -299,9 +299,17 @@ def parity_check(request: dict | None = None) -> dict:
 # --- regime B / C ------------------------------------------------------------
 
 
-def compare_to_targets(metrics: dict, voice: str) -> dict:
-    """Regime B: structured deltas from measured metrics to the spec targets."""
-    return _targets.compare_to_targets(metrics, voice)
+def compare_to_targets(metrics: dict, voice: str, wav_id: str | None = None) -> dict:
+    """Regime B: structured deltas from measured metrics to the spec targets.
+
+    For BD (the first real regime-B voice) the targets are signal-domain shapes
+    (in-phase attack, beat, no-sweep), so pass the `wav_id` of the sterile BD
+    render and the signal is loaded and handed to the BD comparator.
+    """
+    signal = sr = None
+    if wav_id is not None:
+        signal, sr = load_signal(wav_id)
+    return _targets.compare_to_targets(metrics, voice, signal=signal, sr=sr)
 
 
 def compare_to_reference(wav_id: str, voice: str) -> dict:

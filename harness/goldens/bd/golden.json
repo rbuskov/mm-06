@@ -1,0 +1,43 @@
+{
+  "blessed": {
+    "at_utc": "2026-06-05T00:14:28.458877+00:00",
+    "previously_blessed": false,
+    "reason": "Freeze bass-drum regime-B numeric baseline (\u00a76 BD targets within tolerance)"
+  },
+  "metric_vector": {
+    "dc_offset": -9.280001643232557e-05,
+    "decay.tau_e": 0.017681260062660152,
+    "fundamental": 59.92236346895523,
+    "peak": 0.4885265529155731,
+    "rms": 0.04117759948812403,
+    "spectral_centroid": 60.03686658500147
+  },
+  "name": "bd",
+  "overrides": {},
+  "regime": "B/C",
+  "render_hash": "f0ee938ee3e75100308b2bca8780d0517bb0772d3984837b2495ee2383c266f8",
+  "request": {
+    "block_size": 128,
+    "events": [
+      {
+        "sample_index": 0,
+        "voice": "bd"
+      }
+    ],
+    "length_samples": 24000,
+    "sample_rate": 48000.0,
+    "seed": 1542,
+    "variance_depth": 0.0,
+    "voice": "bd"
+  },
+  "schema_version": 1,
+  "tolerances": {
+    "dc_offset": 0.001,
+    "decay.tau_e": 0.005,
+    "fundamental": 5.0,
+    "peak": 0.005,
+    "rms": 0.005,
+    "spectral_centroid": 25.0
+  },
+  "voice": "bd"
+}

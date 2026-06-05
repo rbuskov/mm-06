@@ -79,9 +79,13 @@ def build_server():
         return tools.parity_check(request)
 
     @mcp.tool()
-    def compare_to_targets(metrics: dict, voice: str) -> dict:
-        """Regime B: deltas from measured metrics to the spec targets."""
-        return tools.compare_to_targets(metrics, voice)
+    def compare_to_targets(metrics: dict, voice: str, wav_id: str | None = None) -> dict:
+        """Regime B: deltas from measured metrics to the spec targets.
+
+        Pass `wav_id` for voices whose targets are signal-domain shapes (BD:
+        in-phase attack, beat, no-sweep) so the signal can be measured directly.
+        """
+        return tools.compare_to_targets(metrics, voice, wav_id=wav_id)
 
     @mcp.tool()
     def compare_to_reference(wav_id: str, voice: str) -> dict:
