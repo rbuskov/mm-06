@@ -103,6 +103,16 @@ def build_server():
         """Persist an in-scope, in-bounds calibratable-constant edit."""
         return tools.apply_param_edit(key, new_value)
 
+    @mcp.tool()
+    def compare_to_golden(name: str) -> dict:
+        """Re-render a golden, recompute its metrics, flag drift (§9)."""
+        return tools.compare_to_golden(name)
+
+    @mcp.tool()
+    def bless_golden(voice: str, reason: str, name: str | None = None) -> dict:
+        """The only writer of a golden: refresh it + emit a before/after diff (§9)."""
+        return tools.bless_golden(voice, reason, name=name)
+
     return mcp
 
 

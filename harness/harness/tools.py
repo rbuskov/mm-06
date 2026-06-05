@@ -326,3 +326,31 @@ def propose_param_edit(key: str, new_value: float) -> dict:
 def apply_param_edit(key: str, new_value: float) -> dict:
     """Persist an in-scope, in-bounds calibratable-constant edit. See `harness.params`."""
     return _params.apply_param_edit(key, new_value)
+
+
+# --- goldens & the `--bless` workflow (§9) -----------------------------------
+
+
+def compare_to_golden(name: str) -> dict:
+    """Re-render a golden's request, recompute its metrics, flag drift (§9).
+
+    Returns a structured drift report (per-metric before/after deltas + a
+    render-hash match flag). See :mod:`harness.goldens`. Regime-A invariants are
+    never guarded by a golden — `run_invariants` gates those.
+    """
+    from . import goldens as _goldens
+
+    return _goldens.compare_to_golden(name)
+
+
+def bless_golden(voice: str, reason: str, name: str | None = None) -> dict:
+    """Freeze/refresh a golden and emit a before/after diff report (§9).
+
+    The ONLY writer of a golden: re-renders the sterile request for `voice`
+    (regime B/C/mix — never a regime-A invariant), computes the new metric vector
+    + render hash, emits a readable old-vs-new diff, then refreshes the stored
+    golden. Always returns the diff for the one human glance.
+    """
+    from . import goldens as _goldens
+
+    return _goldens.bless_golden(voice, reason, name=name)

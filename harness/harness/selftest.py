@@ -57,6 +57,32 @@ def run() -> int:
     refused = tools.propose_param_edit("mixer.master_level", 2.0)
     print(f"[propose oob]   accepted={refused['accepted']} (expected False)")
 
+    # 8. golden round-trip (§9): bless a throwaway → compare clean → perturb a
+    #    constant → drift flagged → restore. Committed goldens/ are untouched.
+    import shutil
+
+    from . import goldens, params
+
+    g_name = "_selftest_sd"
+    params.reset_overrides()
+    try:
+        goldens.bless_golden("sd", "selftest baseline", name=g_name)
+        clean = tools.compare_to_golden(g_name)
+        tools.apply_param_edit("bleep.freq_hz", 990.0)
+        drifted = tools.compare_to_golden(g_name)
+        print(
+            f"[golden]        clean.drift={clean['drift']}  "
+            f"perturbed.drift={drifted['drift']}  moved={drifted['drifted_metrics']}"
+        )
+        golden_ok = (
+            (not clean["drift"])
+            and drifted["drift"]
+            and "fundamental" in drifted["drifted_metrics"]
+        )
+    finally:
+        params.reset_overrides()
+        shutil.rmtree(goldens.golden_dir(g_name), ignore_errors=True)
+
     ok = (
         870.0 <= f["fundamental"] <= 890.0
         and abs(f["dc_offset"]) < 1e-2
@@ -64,6 +90,7 @@ def run() -> int:
         and par["max_divergence"] == 0
         and prop["accepted"]
         and not refused["accepted"]
+        and golden_ok
     )
     print("=" * 60)
     print("RESULT:", "GREEN" if ok else "RED")

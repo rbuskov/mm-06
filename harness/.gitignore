@@ -12,3 +12,8 @@ __pycache__/
 *.wav
 *.json
 !references/*.wav
+
+# Golden baselines ARE committed — that's the whole point of a golden (§9). The
+# blessed metric-vector + render-hash JSON under goldens/ is the tracked
+# baseline; only transient working renders (.work/) are ignored above.
+!goldens/**/golden.json

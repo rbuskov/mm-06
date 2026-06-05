@@ -25,15 +25,18 @@ harness/
     selftest.py   # `python -m harness.selftest` end-to-end smoke
     params.py     # the write side: whitelisted calibratable-constant registry
     targets.py    # regime-B target table + regime-C reference shape distance
+    goldens.py    # the golden store + comparator + `bless_golden` (§9)
     paths.py      # repo-path resolution (relative to this package; worktree-safe)
+  goldens/        # COMMITTED golden baselines: <name>/golden.json
   tests/          # pytest: function-level E2E against the bleep
   requirements.txt / pyproject.toml   # pinned deps
-  .gitignore      # .venv/, .work/, __pycache__, generated *.wav/*.json
+  .gitignore      # .venv/, .work/, __pycache__, generated *.wav/*.json (goldens/ tracked)
 ```
 
 Generated WAV/JSON artifacts and the param-override file live in
 `harness/.work/` (a `wav_id` is `.work/<id>.wav`); everything there is
-git-ignored.
+git-ignored. The **golden baselines** under `harness/goldens/` are the deliberate
+exception: they **are committed** — see *Goldens & `--bless`* below.
 
 ## Setup
 
@@ -63,7 +66,7 @@ the analysis chain (numpy/scipy/soundfile/librosa) all installed cleanly.
 It speaks MCP over **stdio** — point a `claude_desktop_config.json` /
 `mcp.json` stdio server entry at that command (with the venv's interpreter and
 `harness/` as cwd). `build_server()` constructs a `FastMCP("dsp-harness")` with
-all ten tools registered.
+all twelve tools registered.
 
 ## The tool surface (§2.3)
 
@@ -79,6 +82,8 @@ all ten tools registered.
 | `list_params() -> [...]` | the whitelist of calibratable constants + their active values. |
 | `propose_param_edit(key, new_value) -> proposal` | validate (don't persist) an edit; refuses out-of-scope keys and out-of-bounds values. |
 | `apply_param_edit(key, new_value) -> result` | persist an in-scope, in-bounds edit to `.work/param_overrides.json`. |
+| `compare_to_golden(name) -> drift_report` | re-render a golden's request, recompute its metric vector, **flag drift** (per-metric deltas vs. tolerance + render-hash match). |
+| `bless_golden(voice, reason, name?) -> diff_report` | the **only** writer of a golden: re-render, compute the new metric vector + hash, emit a readable **before/after diff**, refresh the stored golden (§9). |
 
 ### A typical loop
 
@@ -126,11 +131,48 @@ in. `compare_to_targets` anchors the current 880 Hz bleep (fundamental, DC, deca
 τ). `compare_to_reference` already works against the shipped `references/<voice>.wav`
 clips, returning a shape distance plus decomposed feature deltas.
 
+## Goldens & the `--bless` workflow (§9)
+
+A **golden** is a *frozen render plus its metric vector*. It guards regimes **B**
+and **C** and the full mix against accidental drift; regime-A invariants are
+correctness, not taste, and are **never** guarded or blessed here (`run_invariants`
+gates those). `bless_golden` is the **only** writer of a golden and always emits a
+before/after diff for the one human glance.
+
+**What is committed vs. ignored.** Each golden is `harness/goldens/<name>/golden.json`,
+which **is committed** — the whole point of a golden is a baseline in git. It holds
+the sterile render `request`, the frozen `metric_vector`, a `render_hash` (sha256
+over the rendered f32 PCM — a compact signature, not the WAV bytes), the active
+`overrides` at bless time, per-metric `tolerances`, and a `blessed` audit block. No
+raw WAV is committed; the metric vector + hash is the diffable baseline. Transient
+working renders stay in the git-ignored `.work/`. `harness/.gitignore` keeps
+`goldens/**/golden.json` tracked despite the blanket `*.json` ignore.
+
+```python
+from harness import tools
+tools.bless_golden("sd", "establish baseline")  # writes goldens/sd/golden.json + diff
+tools.compare_to_golden("sd")                    # {drift: False, ...} on an unchanged render
+tools.apply_param_edit("bleep.freq_hz", 990.0)   # perturb a calibratable constant
+tools.compare_to_golden("sd")                    # {drift: True, drifted_metrics: ["fundamental", ...]}
+tools.bless_golden("sd", "accept the new pitch") # before/after diff + refresh → compare clean again
+```
+
+**The override shadow.** The offline `render` binary hard-codes the bleep
+constants and does not yet read `param_overrides.json` (fold-back is a later,
+human-reviewed step). So a constant edit is *visible* before that, the golden
+render path applies the active whitelisted overrides as a **documented
+harness-side shadow** (pitch-shift for `bleep.freq_hz`, decay re-window for
+`bleep.base_tau`, gain for `bleep.base_amp`); `crates/` and `analysis/` are
+untouched. It collapses to a no-op once `render` reads the overrides. See
+`goldens.py`.
+
 ## Testing
 
 `tests/` exercises the tool functions directly (no MCP client needed):
 render a **still-bleep** voice (`sd`, robust to BD becoming a real voice) →
 analyze (≈ 880 Hz, DC ≈ 0) → `render_mix` round-trip → regime-B/C plumbing →
-param-edit round-trip + out-of-scope/out-of-bounds refusals → and the
-cargo-backed `run_invariants` (GREEN) and `parity_check` (0 divergence), marked
-`slow`. Run a subset with `-m "not slow"`.
+param-edit round-trip + out-of-scope/out-of-bounds refusals → the **golden
+round-trip** (`test_goldens.py`: committed baseline re-renders clean → a perturbed
+constant flags drift and names the moved metric → `bless` diffs + refreshes →
+clean again) → and the cargo-backed `run_invariants` (GREEN) and `parity_check`
+(0 divergence), marked `slow`. Run a subset with `-m "not slow"`.
