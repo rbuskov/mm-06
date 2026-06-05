@@ -62,11 +62,14 @@ const ACCENT_EDGE: f32 = 0.7;
 const RING_GAIN: f32 = 5.0;
 
 /// Post-VCA output make-up so the (near-linear) VCA output reaches a musical
-/// level comparable to the placeholder bleep, with headroom for accent and the
-/// per-voice LEVEL. Applied *after* the saturation, so accent's larger VCA
-/// input survives as extra loudness (the grit lives in the harmonics tanh
-/// adds, not in a level cut).
-const OUTPUT_GAIN: f32 = 9.0;
+/// level. Applied *after* the saturation, so accent's larger VCA input survives
+/// as extra loudness (the grit lives in the harmonics tanh adds, not in a level
+/// cut). Sized so the kick sits forward in the mix: a plain hit reaches ≈ 0.7
+/// raw and an accented one rings past 1.0, so the loud front edge drives the
+/// downstream bus soft-saturation (lib.rs) into gentle compression — the
+/// transient flattens while the body/sustain comes up, which is what reads as a
+/// louder, punchier kick. The per-voice LEVEL still scales it like any voice.
+const OUTPUT_GAIN: f32 = 14.0;
 
 /// Gentle output-VCA decay time-constant (seconds). The audible decay is the
 /// resonator Q; this only adds a soft analog taper, so it is long enough not to
